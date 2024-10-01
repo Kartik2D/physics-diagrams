@@ -5,9 +5,10 @@
 
 	let canvas: HTMLCanvasElement
 	let voltage = 5
-	let resistance = 5
+	let resistance = 2.75
 	let current = 1
 	let dashOffset = 0
+	let particles: paper.Path.Circle[] = []
 
 	$: {
 		// Calculate current based on voltage and resistance
@@ -24,7 +25,57 @@
 	const currentColor = new paper.Color('#2ecc71')
 	const tankOutlineColor = new paper.Color('rgba(128, 128, 128, 0.5)')  // transparent grey
 
-	function drawCircuit() {
+	interface Particle extends paper.Path.Circle {
+		data: {
+			velocity: number;
+			lifespan: number;
+		};
+	}
+
+	function createParticle(x: number, y: number, scale: number): Particle {
+		const particle = new paper.Path.Circle({
+			center: [x, y],
+			radius: 2 * scale,
+			fillColor: new paper.Color(1, 1, 1, 0.5)
+		}) as Particle;
+		particle.data = {
+			velocity: Math.random() * 1 + 0.5, // Decreased speed
+			lifespan: Math.random() * 0.5 + 0.5
+		};
+		return particle;
+	}
+
+	function updateParticles(scale: number): void {
+		const tankWidth = 100 * scale;
+		const tankHeight = 200 * scale;
+		const tankLeft = 50 * scale;
+		const tankTop = 50 * scale;
+
+		// Remove dead particles
+		particles = particles.filter(p => p.data.lifespan > 0);
+
+		// Update existing particles
+		particles.forEach(p => {
+			p.position.y += p.data.velocity * (voltage / 5);
+			p.data.lifespan -= 0.016 * (voltage / 5);
+			if (p.fillColor) {
+				p.fillColor.alpha = Math.min(p.data.lifespan, 1);
+			}
+
+			if (p.position.y > tankTop + tankHeight) {
+				p.position.y = tankTop;
+			}
+		});
+
+		// Add new particles
+		while (particles.length < 50) {
+			const x = Math.random() * tankWidth + tankLeft;
+			const y = Math.random() * tankHeight + tankTop;
+			particles.push(createParticle(x, y, scale));
+		}
+	}
+
+	function drawCircuit(): void {
 		if (!paper.project) return
 
 		paper.project.activeLayer.removeChildren()
@@ -32,24 +83,40 @@
 		// Increase overall size
 		const scale = 1.5
 
-		// Draw tank (voltage)
-		const tank = new paper.Path.Rectangle({
-			point: [50 * scale, 50 * scale],
-			size: [100 * scale, 200 * scale],
-			strokeColor: tankOutlineColor,
-			strokeWidth: 6
+		// Draw tank (voltage) without a roof
+		const tank = new paper.Path()
+		tank.add(new paper.Point(50 * scale, 50 * scale))
+		tank.lineTo(new paper.Point(50 * scale, 250 * scale))
+		tank.lineTo(new paper.Point(150 * scale, 250 * scale))
+		tank.lineTo(new paper.Point(150 * scale, 50 * scale))
+		tank.strokeColor = tankOutlineColor
+		tank.strokeWidth = 6
+
+		// Draw static water level with gradient
+		const waterHeight = 220 * scale
+		const waterTop = 30 * scale
+		const waterGradient = {
+			gradient: {
+				stops: [
+					{ offset: 0, color: new paper.Color('rgba(52, 152, 219, 0.7)') },
+					{ offset: 1, color: new paper.Color('rgba(52, 152, 219, 0)') }
+				]
+			},
+			origin: new paper.Point(50 * scale, waterTop + waterHeight),
+			destination: new paper.Point(50 * scale, waterTop)
+		}
+		const water = new paper.Path.Rectangle({
+			point: [50 * scale, waterTop],
+			size: [100 * scale, waterHeight],
+			fillColor: waterGradient
 		})
 
-		// Draw water level
-		const waterHeight = 200 * scale * (voltage / 10)
-		const water = new paper.Path.Rectangle({
-			point: [50 * scale, (250 * scale) - waterHeight],
-			size: [100 * scale, waterHeight],
-			fillColor: waterColor
-		})
+		// Update and draw particles
+		updateParticles(scale);
+		particles.forEach(p => paper.project.activeLayer.addChild(p));
 
 		// Draw resistance (gap between curves at exit)
-		const resistanceGap = 50 * scale * (resistance / 10)
+		const resistanceGap = 50 * scale * ((resistance - 0.5) / 4.5)
 		const startY = (250 * scale) - resistanceGap
 		const endY = 250 * scale
 
@@ -126,7 +193,7 @@
 		])
 
 		// Update dash offset for animation
-		dashOffset += 0.5 * (current / 5)
+		dashOffset += 2 * (current / 5) // Increased speed
 		if (dashOffset > 16) {
 			dashOffset = 0
 		}
@@ -177,7 +244,7 @@
 				<label for="resistance">
 					Resistance (Ω): <span>{resistance.toFixed(1)}</span>
 				</label>
-				<input type="range" id="resistance" bind:value={resistance} min="0.1" max="10" step="0.1">
+				<input type="range" id="resistance" bind:value={resistance} min="0.5" max="5" step="0.1">
 			</div>
 			<div class="control-group current">
 				<label for="current">
