@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg width="100%" height="100%" viewBox="0 0 600 600" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xml:space="preserve" xmlns:serif="http://www.serif.com/" style="fill-rule:evenodd;clip-rule:evenodd;stroke-linecap:round;stroke-linejoin:round;stroke-miterlimit:1.5;">
+    <g id="tank" transform="matrix(0.85,0,0,1,15,40)">
+        <rect x="100" y="120" width="200" height="280" style="fill:rgb(235,235,235);"/>
+    </g>
+    <path id="water" d="M270,360C270,360 600,346.62 600,600L400,600C400,600 381.971,440 270,440C268,440 270,360 270,360Z" style="fill:rgb(235,235,235);"/>
+    <g id="wall" transform="matrix(0.85,0,0,1,15,0)">
+        <path d="M100,160L100,440L300,440" style="fill:none;stroke:black;stroke-width:16.16px;"/>
+    </g>
+    <g id="door" transform="matrix(0.85,0,0,1,15,0)">
+        <path d="M300,160L300,360" style="fill:none;stroke:black;stroke-width:16.16px;"/>
+    </g>
+</svg>
