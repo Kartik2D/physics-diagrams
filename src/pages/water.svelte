@@ -3,12 +3,50 @@
 	import paper from 'paper'
 	import { onMount } from 'svelte'
 
+	// Tweakable properties
+	const PROPERTIES = {
+		SCALE: 1.5,
+		TANK_WIDTH: 100,
+		TANK_HEIGHT: 200,
+		TANK_LEFT: 50,
+		TANK_TOP: 50,
+		WATER_HEIGHT: 220,
+		WATER_TOP: 30,
+		TANK_PARTICLE_COUNT: 50,
+		TANK_PARTICLE_MIN_VELOCITY: 0.5,
+		TANK_PARTICLE_MAX_VELOCITY: 1.5,
+		TANK_PARTICLE_MIN_LIFESPAN: 0.5,
+		TANK_PARTICLE_MAX_LIFESPAN: 1,
+		FLOW_PARTICLE_COUNT: 100,
+		FLOW_PARTICLE_MIN_VELOCITY: 2,
+		FLOW_PARTICLE_MAX_VELOCITY: 4,
+		FLOW_PARTICLE_MIN_LIFESPAN: 0.3,
+		FLOW_PARTICLE_MAX_LIFESPAN: 0.8,
+		DASH_ARRAY: [8, 8],
+		DASH_OFFSET_SPEED: 3,
+		DASH_OFFSET_MAX: 16,
+		CURVE_DISTANCE_FACTOR: 200,
+		TOP_CURVE_EXTENSION_FACTOR: 20,
+		RESISTANCE_GAP_FACTOR: 50,
+	}
+
+	const COLORS = {
+		WATER: new paper.Color('rgba(52, 152, 219, 0.7)'),
+		OUTLINE: new paper.Color('rgba(41, 128, 185, 0.7)'),
+		VOLTAGE: new paper.Color('#3498db'),
+		RESISTANCE: new paper.Color('#e74c3c'),
+		CURRENT: new paper.Color('#2ecc71'),
+		TANK_OUTLINE: new paper.Color('rgba(128, 128, 128, 0.5)'),
+		PARTICLE: new paper.Color(1, 1, 1, 0.5),
+	}
+
 	let canvas: HTMLCanvasElement
 	let voltage = 5
 	let resistance = 2.75
 	let current = 1
 	let dashOffset = 0
-	let particles: paper.Path.Circle[] = []
+	let tankParticles: paper.Path.Circle[] = []
+	let flowParticles: paper.Path.Circle[] = []
 
 	$: {
 		// Calculate current based on voltage and resistance
@@ -18,44 +56,47 @@
 		}
 	}
 
-	const waterColor = new paper.Color('rgba(52, 152, 219, 0.7)')
-	const outlineColor = new paper.Color('rgba(41, 128, 185, 0.7)')
-	const voltageColor = new paper.Color('#3498db')
-	const resistanceColor = new paper.Color('#e74c3c')
-	const currentColor = new paper.Color('#2ecc71')
-	const tankOutlineColor = new paper.Color('rgba(128, 128, 128, 0.5)')  // transparent grey
-
 	interface Particle extends paper.Path.Circle {
 		data: {
 			velocity: number;
 			lifespan: number;
+			direction?: paper.Point;
 		};
 	}
 
-	function createParticle(x: number, y: number, scale: number): Particle {
+	function createParticle(x: number, y: number, scale: number, isFlow: boolean = false): Particle {
 		const particle = new paper.Path.Circle({
 			center: [x, y],
 			radius: 2 * scale,
-			fillColor: new paper.Color(1, 1, 1, 0.5)
+			fillColor: COLORS.PARTICLE
 		}) as Particle;
-		particle.data = {
-			velocity: Math.random() * 1 + 0.5, // Decreased speed
-			lifespan: Math.random() * 0.5 + 0.5
-		};
+		
+		if (isFlow) {
+			particle.data = {
+				velocity: Math.random() * (PROPERTIES.FLOW_PARTICLE_MAX_VELOCITY - PROPERTIES.FLOW_PARTICLE_MIN_VELOCITY) + PROPERTIES.FLOW_PARTICLE_MIN_VELOCITY,
+				lifespan: Math.random() * (PROPERTIES.FLOW_PARTICLE_MAX_LIFESPAN - PROPERTIES.FLOW_PARTICLE_MIN_LIFESPAN) + PROPERTIES.FLOW_PARTICLE_MIN_LIFESPAN,
+				direction: new paper.Point(0, 0)
+			};
+		} else {
+			particle.data = {
+				velocity: Math.random() * (PROPERTIES.TANK_PARTICLE_MAX_VELOCITY - PROPERTIES.TANK_PARTICLE_MIN_VELOCITY) + PROPERTIES.TANK_PARTICLE_MIN_VELOCITY,
+				lifespan: Math.random() * (PROPERTIES.TANK_PARTICLE_MAX_LIFESPAN - PROPERTIES.TANK_PARTICLE_MIN_LIFESPAN) + PROPERTIES.TANK_PARTICLE_MIN_LIFESPAN
+			};
+		}
 		return particle;
 	}
 
-	function updateParticles(scale: number): void {
-		const tankWidth = 100 * scale;
-		const tankHeight = 200 * scale;
-		const tankLeft = 50 * scale;
-		const tankTop = 50 * scale;
+	function updateTankParticles(scale: number): void {
+		const tankWidth = PROPERTIES.TANK_WIDTH * scale;
+		const tankHeight = PROPERTIES.TANK_HEIGHT * scale;
+		const tankLeft = PROPERTIES.TANK_LEFT * scale;
+		const tankTop = PROPERTIES.TANK_TOP * scale;
 
 		// Remove dead particles
-		particles = particles.filter(p => p.data.lifespan > 0);
+		tankParticles = tankParticles.filter(p => p.data.lifespan > 0);
 
 		// Update existing particles
-		particles.forEach(p => {
+		tankParticles.forEach(p => {
 			p.position.y += p.data.velocity * (voltage / 5);
 			p.data.lifespan -= 0.016 * (voltage / 5);
 			if (p.fillColor) {
@@ -68,10 +109,42 @@
 		});
 
 		// Add new particles
-		while (particles.length < 50) {
+		while (tankParticles.length < PROPERTIES.TANK_PARTICLE_COUNT) {
 			const x = Math.random() * tankWidth + tankLeft;
 			const y = Math.random() * tankHeight + tankTop;
-			particles.push(createParticle(x, y, scale));
+			tankParticles.push(createParticle(x, y, scale));
+		}
+	}
+
+	function updateFlowParticles(scale: number, topCurve: paper.Path, bottomCurve: paper.Path): void {
+		// Remove dead particles
+		flowParticles = flowParticles.filter(p => p.data.lifespan > 0);
+
+		// Update existing particles
+		flowParticles.forEach(p => {
+			if (p.data.direction) {
+				p.position = p.position.add(p.data.direction.multiply(p.data.velocity * (current / 5)));
+			}
+			p.data.lifespan -= 0.016 * (current / 5);
+			if (p.fillColor) {
+				p.fillColor.alpha = Math.min(p.data.lifespan, 1);
+			}
+		});
+
+		// Add new particles
+		while (flowParticles.length < PROPERTIES.FLOW_PARTICLE_COUNT) {
+			const t = Math.random();
+			const topPoint = topCurve.getPointAt(topCurve.length * t);
+			const bottomPoint = bottomCurve.getPointAt(bottomCurve.length * t);
+			const x = topPoint.x + Math.random() * (bottomPoint.x - topPoint.x);
+			const y = topPoint.y + Math.random() * (bottomPoint.y - topPoint.y);
+			const particle = createParticle(x, y, scale, true);
+			
+			// Calculate direction based on the curve
+			const tangent = topCurve.getTangentAt(topCurve.length * t);
+			particle.data.direction = tangent.normalize();
+			
+			flowParticles.push(particle);
 		}
 	}
 
@@ -80,96 +153,97 @@
 
 		paper.project.activeLayer.removeChildren()
 
-		// Increase overall size
-		const scale = 1.5
+		const scale = PROPERTIES.SCALE
 
 		// Draw tank (voltage) without a roof
 		const tank = new paper.Path()
-		tank.add(new paper.Point(50 * scale, 50 * scale))
-		tank.lineTo(new paper.Point(50 * scale, 250 * scale))
-		tank.lineTo(new paper.Point(150 * scale, 250 * scale))
-		tank.lineTo(new paper.Point(150 * scale, 50 * scale))
-		tank.strokeColor = tankOutlineColor
+		tank.add(new paper.Point(PROPERTIES.TANK_LEFT * scale, PROPERTIES.TANK_TOP * scale))
+		tank.lineTo(new paper.Point(PROPERTIES.TANK_LEFT * scale, (PROPERTIES.TANK_TOP + PROPERTIES.TANK_HEIGHT) * scale))
+		tank.lineTo(new paper.Point((PROPERTIES.TANK_LEFT + PROPERTIES.TANK_WIDTH) * scale, (PROPERTIES.TANK_TOP + PROPERTIES.TANK_HEIGHT) * scale))
+		tank.lineTo(new paper.Point((PROPERTIES.TANK_LEFT + PROPERTIES.TANK_WIDTH) * scale, PROPERTIES.TANK_TOP * scale))
+		tank.strokeColor = COLORS.TANK_OUTLINE
 		tank.strokeWidth = 6
 
 		// Draw static water level with gradient
-		const waterHeight = 220 * scale
-		const waterTop = 30 * scale
 		const waterGradient = {
 			gradient: {
 				stops: [
-					{ offset: 0, color: new paper.Color('rgba(52, 152, 219, 0.7)') },
+					{ offset: 0, color: COLORS.WATER },
 					{ offset: 1, color: new paper.Color('rgba(52, 152, 219, 0)') }
 				]
 			},
-			origin: new paper.Point(50 * scale, waterTop + waterHeight),
-			destination: new paper.Point(50 * scale, waterTop)
+			origin: new paper.Point(PROPERTIES.TANK_LEFT * scale, (PROPERTIES.WATER_TOP + PROPERTIES.WATER_HEIGHT) * scale),
+			destination: new paper.Point(PROPERTIES.TANK_LEFT * scale, PROPERTIES.WATER_TOP * scale)
 		}
 		const water = new paper.Path.Rectangle({
-			point: [50 * scale, waterTop],
-			size: [100 * scale, waterHeight],
+			point: [PROPERTIES.TANK_LEFT * scale, PROPERTIES.WATER_TOP * scale],
+			size: [PROPERTIES.TANK_WIDTH * scale, PROPERTIES.WATER_HEIGHT * scale],
 			fillColor: waterGradient
 		})
 
-		// Update and draw particles
-		updateParticles(scale);
-		particles.forEach(p => paper.project.activeLayer.addChild(p));
+		// Update and draw tank particles
+		updateTankParticles(scale);
+		tankParticles.forEach(p => paper.project.activeLayer.addChild(p));
 
 		// Draw resistance (gap between curves at exit)
-		const resistanceGap = 50 * scale * ((resistance - 0.5) / 4.5)
-		const startY = (250 * scale) - resistanceGap
-		const endY = 250 * scale
+		const resistanceGap = PROPERTIES.RESISTANCE_GAP_FACTOR * scale * ((resistance - 0.5) / 4.5)
+		const startY = ((PROPERTIES.TANK_TOP + PROPERTIES.TANK_HEIGHT) * scale) - resistanceGap
+		const endY = (PROPERTIES.TANK_TOP + PROPERTIES.TANK_HEIGHT) * scale
 
 		// Calculate curve distance based on current
-		const curveDistance = 200 * scale * (current / 5)
-		const topCurveExtension = 20 * scale * current
+		const curveDistance = PROPERTIES.CURVE_DISTANCE_FACTOR * scale * (current / 5)
+		const topCurveExtension = PROPERTIES.TOP_CURVE_EXTENSION_FACTOR * scale * current
 
 		// Draw water flow (two Bézier curves)
 		const topCurve = new paper.Path()
-		topCurve.add(new paper.Point(150 * scale, startY))
+		topCurve.add(new paper.Point((PROPERTIES.TANK_LEFT + PROPERTIES.TANK_WIDTH) * scale, startY))
 		topCurve.cubicCurveTo(
-			new paper.Point((150 * scale) + (curveDistance / 2), startY),
-			new paper.Point((150 * scale) + curveDistance + topCurveExtension, startY),
-			new paper.Point((150 * scale) + curveDistance + topCurveExtension, paper.view.size.height + (50 * scale))
+			new paper.Point(((PROPERTIES.TANK_LEFT + PROPERTIES.TANK_WIDTH) * scale) + (curveDistance / 2), startY),
+			new paper.Point(((PROPERTIES.TANK_LEFT + PROPERTIES.TANK_WIDTH) * scale) + curveDistance + topCurveExtension, startY),
+			new paper.Point(((PROPERTIES.TANK_LEFT + PROPERTIES.TANK_WIDTH) * scale) + curveDistance + topCurveExtension, paper.view.size.height + (50 * scale))
 		)
 
 		const bottomCurve = new paper.Path()
-		bottomCurve.add(new paper.Point(150 * scale, endY))
+		bottomCurve.add(new paper.Point((PROPERTIES.TANK_LEFT + PROPERTIES.TANK_WIDTH) * scale, endY))
 		bottomCurve.cubicCurveTo(
-			new paper.Point((150 * scale) + (curveDistance / 2), endY),
-			new paper.Point((150 * scale) + curveDistance, endY),
-			new paper.Point((150 * scale) + curveDistance, paper.view.size.height + (50 * scale))
+			new paper.Point(((PROPERTIES.TANK_LEFT + PROPERTIES.TANK_WIDTH) * scale) + (curveDistance / 2), endY),
+			new paper.Point(((PROPERTIES.TANK_LEFT + PROPERTIES.TANK_WIDTH) * scale) + curveDistance, endY),
+			new paper.Point(((PROPERTIES.TANK_LEFT + PROPERTIES.TANK_WIDTH) * scale) + curveDistance, paper.view.size.height + (50 * scale))
 		)
 
 		const flowOutline = new paper.Group([topCurve, bottomCurve])
-		flowOutline.strokeColor = outlineColor
+		flowOutline.strokeColor = COLORS.OUTLINE
 		flowOutline.strokeWidth = 6
-		flowOutline.dashArray = [8, 8]
+		flowOutline.dashArray = PROPERTIES.DASH_ARRAY
 		flowOutline.dashOffset = -dashOffset
 
 		// Fill water area
 		const waterFlow = new paper.Path()
-		waterFlow.add(new paper.Point(150 * scale, startY))
+		waterFlow.add(new paper.Point((PROPERTIES.TANK_LEFT + PROPERTIES.TANK_WIDTH) * scale, startY))
 		waterFlow.cubicCurveTo(
-			new paper.Point((150 * scale) + (curveDistance / 2), startY),
-			new paper.Point((150 * scale) + curveDistance + topCurveExtension, startY),
-			new paper.Point((150 * scale) + curveDistance + topCurveExtension, paper.view.size.height + (50 * scale))
+			new paper.Point(((PROPERTIES.TANK_LEFT + PROPERTIES.TANK_WIDTH) * scale) + (curveDistance / 2), startY),
+			new paper.Point(((PROPERTIES.TANK_LEFT + PROPERTIES.TANK_WIDTH) * scale) + curveDistance + topCurveExtension, startY),
+			new paper.Point(((PROPERTIES.TANK_LEFT + PROPERTIES.TANK_WIDTH) * scale) + curveDistance + topCurveExtension, paper.view.size.height + (50 * scale))
 		)
-		waterFlow.lineTo(new paper.Point((150 * scale) + curveDistance, paper.view.size.height + (50 * scale)))
+		waterFlow.lineTo(new paper.Point(((PROPERTIES.TANK_LEFT + PROPERTIES.TANK_WIDTH) * scale) + curveDistance, paper.view.size.height + (50 * scale)))
 		waterFlow.cubicCurveTo(
-			new paper.Point((150 * scale) + curveDistance, endY),
-			new paper.Point((150 * scale) + (curveDistance / 2), endY),
-			new paper.Point(150 * scale, endY)
+			new paper.Point(((PROPERTIES.TANK_LEFT + PROPERTIES.TANK_WIDTH) * scale) + curveDistance, endY),
+			new paper.Point(((PROPERTIES.TANK_LEFT + PROPERTIES.TANK_WIDTH) * scale) + (curveDistance / 2), endY),
+			new paper.Point((PROPERTIES.TANK_LEFT + PROPERTIES.TANK_WIDTH) * scale, endY)
 		)
 		waterFlow.closePath()
-		waterFlow.fillColor = waterColor
+		waterFlow.fillColor = COLORS.WATER
+
+		// Update and draw flow particles
+		updateFlowParticles(scale, topCurve, bottomCurve);
+		flowParticles.forEach(p => paper.project.activeLayer.addChild(p));
 
 		// Add labels
 		const labels = new paper.Group([
 			new paper.PointText({
 				point: [20 * scale, 150 * scale],
 				content: 'V',
-				fillColor: voltageColor,
+				fillColor: COLORS.VOLTAGE,
 				fontFamily: 'Segoe UI, sans-serif',
 				fontSize: 24,
 				fontWeight: 'bold'
@@ -177,15 +251,15 @@
 			new paper.PointText({
 				point: [160 * scale, 250 * scale],
 				content: 'Ω',
-				fillColor: resistanceColor,
+				fillColor: COLORS.RESISTANCE,
 				fontFamily: 'Segoe UI, sans-serif',
 				fontSize: 24,
 				fontWeight: 'bold'
 			}),
 			new paper.PointText({
-				point: [(150 * scale) + curveDistance, 320 * scale],
+				point: [((PROPERTIES.TANK_LEFT + PROPERTIES.TANK_WIDTH) * scale) + curveDistance, 320 * scale],
 				content: 'A',
-				fillColor: currentColor,
+				fillColor: COLORS.CURRENT,
 				fontFamily: 'Segoe UI, sans-serif',
 				fontSize: 24,
 				fontWeight: 'bold'
@@ -193,8 +267,8 @@
 		])
 
 		// Update dash offset for animation
-		dashOffset += 2 * (current / 5) // Increased speed
-		if (dashOffset > 16) {
+		dashOffset += PROPERTIES.DASH_OFFSET_SPEED * (current / 5)
+		if (dashOffset > PROPERTIES.DASH_OFFSET_MAX) {
 			dashOffset = 0
 		}
 
